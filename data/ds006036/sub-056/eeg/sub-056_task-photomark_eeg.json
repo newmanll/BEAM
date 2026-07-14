@@ -1,0 +1,14 @@
+{
+  "PowerLineFrequency": 50,
+  "SoftwareFilters": {
+    "FilterDescription": {
+      "Description": "0.5-45"
+    }
+  },
+  "EEGPlacementScheme": "10-20",
+  "EEGReference": "A1 A2",
+  "TaskName": "photomark",
+  "RecordingType": "continuous",
+  "RecordingDuration": 428.1,
+  "SamplingFrequency": 500
+}

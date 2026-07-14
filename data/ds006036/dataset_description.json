@@ -1,0 +1,29 @@
+{
+    "Name": "A complementary dataset of open-eyes EEG recordings in a photo-stimulation setting from: Alzheimer's disease, Frontotemporal dementia and Healthy subjects",
+    "License": "CC0",
+    "Authors": [
+        "Aimilia Ntetska",
+        "Andreas Miltiadous",
+        "Alexandros T. Tzallas",
+        "Katerina D. Tzimourta",
+        "Theodora Afrantou",
+        "Panagiotis Ioannidis",
+        "Dimitrios G. Tsalikakis",
+        "Konstantinos Sakkas",
+        "Emmanouil D. Oikonomou",
+        "Nikolaos Giannakeas",
+        "Markos G. Tsipouras"
+    ],
+    "ReferencesAndLinks": [
+        "https://openneuro.org/datasets/ds004504"
+    ],
+    "BIDSVersion": "1.8.0",
+    "HEDVersion": "8.1.0",
+    "GeneratedBy": [
+        {
+            "Name": "bids-matlab-tools",
+            "Version": "8.0"
+        }
+    ],
+    "DatasetDOI": "doi:10.18112/openneuro.ds006036.v1.0.1"
+}
