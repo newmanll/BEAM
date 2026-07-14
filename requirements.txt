@@ -1,1 +1,7 @@
 streamlit
+streamlit
+numpy
+pandas
+scipy
+scikit-learn
+mne
