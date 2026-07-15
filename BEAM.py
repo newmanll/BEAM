@@ -15,6 +15,10 @@ What changed from the original script
   every number the site needs (model metrics, ROC points, cognitive
   trajectories, band-power comparisons) lives in that one file, so the
   site can be dataset-aware and clickable without regenerating images.
+- Each model's metrics now include a resampled ROC curve (`roc`:
+  {fpr, tpr}) on a fixed 21-point FPR grid, so the dashboard's ROC
+  chart can render the exact curve instead of approximating it from
+  the AUC alone.
 
 Run this after pointing DATASET_PATH / DATASET_PATH2 at your BIDS folders.
 Output: dashboard/results.json
@@ -58,6 +62,8 @@ WEARABLE_CHANNELS = ["Fp1", "Fp2", "F3", "F4"]
 BANDS = {"delta": (0.5, 4), "theta": (4, 8), "alpha": (8, 13), "beta": (13, 30)}
 BAND_NAMES = list(BANDS.keys())
 N_FEAT_PER_CHANNEL = 6   # delta, theta, alpha, beta, TAR, speed_ratio
+
+ROC_GRID = np.linspace(0, 1, 21)   # fixed FPR grid every model's curve is resampled onto
 
 DATASETS = {
     "ds1": {"label": "Dataset 1 — Eyes-Closed Resting",  "path": DATASET_PATH,  "task": "eyesclosed"},
@@ -162,6 +168,17 @@ def make_models():
     }
 
 
+def resample_roc(y_true, y_prob, grid=ROC_GRID):
+    """Resample an ROC curve onto a fixed FPR grid so every model/dataset
+    combination lines up on the same x-axis in the dashboard chart."""
+    fpr, tpr, _ = roc_curve(y_true, y_prob)
+    tpr_grid = np.interp(grid, fpr, tpr)
+    return {
+        "fpr": [round(float(f), 3) for f in grid],
+        "tpr": [round(float(t), 3) for t in tpr_grid],
+    }
+
+
 def train_and_evaluate(X, y):
     """Performs 5-Fold Stratified CV to calculate clean, non-leaked metrics."""
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
@@ -192,7 +209,8 @@ def train_and_evaluate(X, y):
             "f1": round(f1, 2),
             "auc": round(auc, 2),
             "sensitivity": round(sens, 1),
-            "specificity": round(spec, 1)
+            "specificity": round(spec, 1),
+            "roc": resample_roc(y, y_prob),
         }
 
         if auc > best_auc:
