@@ -1,1 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BEAM — Brainwave EEG for Alzheimer's</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0A0D12; --panel:#12161D; --panel-2:#161B23; --border:#1E242D;
+    --teal:#2DD4BF; --amber:#F5A623; --red:#F2635A;
+    --text:#E7ECF2; --muted:#8792A2; --muted-2:#5B6472;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;-webkit-font-smoothing:antialiased;}
+  h1,h2,h3{font-family:'Space Grotesk',sans-serif;margin:0;}
+  .mono{font-family:'IBM Plex Mono',monospace;}
 
+  /* ── Header / signature waveform ─────────────────────────────── */
+  header{position:relative;overflow:hidden;border-bottom:1px solid var(--border);padding:48px 32px 32px;}
+  header .eyebrow{color:var(--teal);font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.14em;text-transform:uppercase;margin-bottom:10px;}
+  header h1{font-size:clamp(28px,4vw,42px);font-weight:700;max-width:780px;line-height:1.15;}
+  header p{color:var(--muted);max-width:620px;margin-top:12px;font-size:15px;line-height:1.6;}
+  .wave-strip{position:absolute;inset:0;opacity:.35;pointer-events:none;}
+  .wave-strip path{stroke-dasharray:2000;stroke-dashoffset:2000;animation:draw 7s linear infinite;}
+  .wave-strip path.p2{animation-duration:9.5s;animation-delay:-2s;}
+  .wave-strip path.p3{animation-duration:5.5s;animation-delay:-4s;}
+  @keyframes draw{to{stroke-dashoffset:0;}}
+
+  main{max-width:1180px;margin:0 auto;padding:36px 32px 80px;}
+  section{margin-bottom:56px;}
+  .section-head{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:18px;}
+  .section-head h2{font-size:20px;}
+  .section-head .num{color:var(--muted-2);font-family:'IBM Plex Mono',monospace;font-size:13px;margin-right:8px;}
+  .section-desc{color:var(--muted);font-size:13.5px;max-width:640px;line-height:1.55;}
+
+  /* ── Tabs ─────────────────────────────────────────────────────── */
+  .tabs{display:inline-flex;background:var(--panel);border:1px solid var(--border);border-radius:999px;padding:4px;gap:2px;}
+  .tabs button{border:none;background:transparent;color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:12.5px;padding:8px 16px;border-radius:999px;cursor:pointer;transition:.15s;}
+  .tabs button.active{background:var(--teal);color:#06201B;font-weight:600;}
+  .tabs button:not(.active):hover{color:var(--text);}
+
+  /* ── Cards / grid ─────────────────────────────────────────────── */
+  .grid{display:grid;grid-template-columns:1.3fr 1fr;gap:18px;}
+  @media(max-width:820px){.grid{grid-template-columns:1fr;}}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:20px;}
+  .card h3{font-size:14px;font-weight:600;color:var(--text);margin-bottom:2px;}
+  .card .hint{color:var(--muted-2);font-size:11.5px;margin-bottom:14px;font-family:'IBM Plex Mono',monospace;}
+  .card canvas{max-height:280px;}
+
+  .stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px;}
+  .stat{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;}
+  .stat .label{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;}
+  .stat .value{font-family:'IBM Plex Mono',monospace;font-size:20px;font-weight:500;color:var(--teal);}
+
+  .click-hint{color:var(--muted-2);font-size:11px;font-family:'IBM Plex Mono',monospace;margin-top:10px;}
+
+  /* ── Detail drawer ────────────────────────────────────────────── */
+  .drawer-overlay{position:fixed;inset:0;background:rgba(6,8,11,.55);opacity:0;pointer-events:none;transition:opacity .2s;z-index:40;}
+  .drawer-overlay.open{opacity:1;pointer-events:auto;}
+  .drawer{position:fixed;top:0;right:0;height:100%;width:380px;max-width:90vw;background:var(--panel-2);border-left:1px solid var(--border);transform:translateX(100%);transition:transform .25s ease;z-index:41;padding:26px;overflow-y:auto;}
+  .drawer.open{transform:translateX(0);}
+  .drawer .close-btn{position:absolute;top:18px;right:18px;background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;}
+  .drawer h3{font-size:17px;margin-bottom:4px;}
+  .drawer .tag{display:inline-block;font-family:'IBM Plex Mono',monospace;font-size:10.5px;padding:2px 8px;border-radius:4px;margin-bottom:14px;letter-spacing:.04em;}
+  .drawer .tag.ad{background:rgba(242,99,90,.15);color:var(--red);}
+  .drawer .tag.cn{background:rgba(45,212,191,.15);color:var(--teal);}
+  .drawer .tag.info{background:rgba(245,166,35,.15);color:var(--amber);}
+  .drawer p{color:var(--muted);font-size:13.5px;line-height:1.6;margin:0 0 14px;}
+  .drawer .kv{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border);font-size:13px;}
+  .drawer .kv span:first-child{color:var(--muted);}
+  .drawer .kv span:last-child{font-family:'IBM Plex Mono',monospace;color:var(--text);}
+
+  footer{border-top:1px solid var(--border);padding:24px 32px;color:var(--muted-2);font-size:12px;text-align:center;font-family:'IBM Plex Mono',monospace;}
+</style>
+</head>
+<body>
+
+<header>
+  <svg class="wave-strip" viewBox="0 0 1200 200" preserveAspectRatio="none">
+    <path class="p1" d="M0,100 Q30,40 60,100 T120,100 Q150,20 180,100 T240,100 Q270,150 300,100 T360,100 Q390,60 420,100 T480,100 Q510,10 540,100 T600,100 Q630,140 660,100 T720,100 Q750,50 780,100 T840,100 Q870,150 900,100 T960,100 Q990,30 1020,100 T1080,100 Q1110,120 1140,100 T1200,100" fill="none" stroke="#2DD4BF" stroke-width="1.5"/>
+    <path class="p2" d="M0,120 Q40,80 80,120 T160,120 Q200,160 240,120 T320,120 Q360,70 400,120 T480,120 Q520,150 560,120 T640,120 Q680,90 720,120 T800,120 Q840,60 880,120 T960,120 Q1000,150 1040,120 T1120,120 Q1160,100 1200,120" fill="none" stroke="#F5A623" stroke-width="1.2"/>
+    <path class="p3" d="M0,80 Q20,60 40,80 T80,80 Q100,50 120,80 T160,80 Q180,100 200,80 T240,80 Q260,55 280,80 T320,80 Q340,95 360,80 T400,80 Q420,50 440,80 T480,80 Q500,100 520,80 T560,80 Q580,60 600,80 T640,80 Q660,95 680,80 T720,80 Q740,55 760,80 T800,80 Q820,100 840,80 T880,80 Q900,50 920,80 T960,80 Q980,95 1000,80 T1040,80 Q1060,60 1080,80 T1120,80 Q1140,90 1160,80 T1200,80" fill="none" stroke="#F2635A" stroke-width="1"/>
+  </svg>
+  <div class="eyebrow">BEAM · ds004504 + ds006036</div>
+  <h1>Brainwave EEG for Alzheimer's using Machine Learning</h1>
+  <p>Resting-state EEG from 65 subjects, compared across an eyes-closed and an eyes-open recording protocol, scored by three classifiers and projected into a 10-year cognitive trajectory. Pick a dataset below, or click any chart for the numbers behind it.</p>
+</header>
+
+<main>
+
+  <!-- SECTION 1: PER-DATASET -->
+  <section id="sec-per-dataset">
+    <div class="section-head">
+      <div>
+        <h2><span class="num">01</span>Model Comparison &amp; Trajectory — By Dataset</h2>
+      </div>
+      <div class="tabs" id="dataset-tabs">
+        <button data-ds="ds1" class="active">DS1 · Eyes-Closed</button>
+        <button data-ds="ds2">DS2 · Eyes-Open</button>
+      </div>
+    </div>
+    <p class="section-desc" id="ds-desc"></p>
+
+    <div class="stat-row" id="ds-stats"></div>
+
+    <div class="grid">
+      <div class="card">
+        <h3>Model Comparison</h3>
+        <div class="hint">Accuracy / F1 / AUC per classifier — click a bar for the full readout</div>
+        <canvas id="chart-model-ds"></canvas>
+        <div class="click-hint">↳ click a bar</div>
+      </div>
+      <div class="card">
+        <h3>Cognitive Trajectory</h3>
+        <div class="hint">Mean projected MMSE by EEG risk tier — click a line for the tier detail</div>
+        <canvas id="chart-traj-ds"></canvas>
+        <div class="click-hint">↳ click a line</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SECTION 2: COMBINED -->
+  <section id="sec-combined">
+    <div class="section-head">
+      <div><h2><span class="num">02</span>Model Comparison &amp; Trajectory — Combined</h2></div>
+    </div>
+    <p class="section-desc">Both protocols pooled into one training set (130 recordings), so each model sees eyes-closed and eyes-open patterns together.</p>
+
+    <div class="stat-row" id="combined-stats"></div>
+
+    <div class="grid">
+      <div class="card">
+        <h3>Model Comparison</h3>
+        <div class="hint">Accuracy / F1 / AUC per classifier — click a bar for the full readout</div>
+        <canvas id="chart-model-combined"></canvas>
+        <div class="click-hint">↳ click a bar</div>
+      </div>
+      <div class="card">
+        <h3>Cognitive Trajectory</h3>
+        <div class="hint">Mean projected MMSE by EEG risk tier — click a line for the tier detail</div>
+        <canvas id="chart-traj-combined"></canvas>
+        <div class="click-hint">↳ click a line</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SECTION 3: BRAINWAVE COMPARISON -->
+  <section id="sec-brainwave">
+    <div class="section-head">
+      <div><h2><span class="num">03</span>Brainwave Comparison — DS1 vs DS2</h2></div>
+    </div>
+    <p class="section-desc">Average band power per protocol, split by diagnosis. Eyes-open photic stimulation is expected to suppress alpha relative to eyes-closed rest — this chart shows whether that held in each group.</p>
+
+    <div class="card">
+      <h3>Band Power by Protocol</h3>
+      <div class="hint">Delta / Theta / Alpha / Beta, Alzheimer's vs Healthy, DS1 vs DS2 — click a bar for stats</div>
+      <canvas id="chart-brainwave" style="max-height:340px;"></canvas>
+      <div class="click-hint">↳ click a bar</div>
+    </div>
+  </section>
+
+</main>
+
+<footer>BEAM Dashboard · Miltiadous et al. (2023) OpenNeuro ds004504 · ds006036 · for research use only, not a diagnostic tool</footer>
+
+<div class="drawer-overlay" id="overlay"></div>
+<div class="drawer" id="drawer">
+  <button class="close-btn" id="drawer-close">✕</button>
+  <div id="drawer-content"></div>
+</div>
+
+<script>
+/* ────────────────────────────────────────────────────────────────
+   DEMO DATA — replace by fetching results.json from beam_pipeline.py
+   The dashboard tries results.json first and falls back to this
+   synthetic sample so the UI is viewable immediately.
+──────────────────────────────────────────────────────────────── */
+const SAMPLE_DATA = {
+  datasets: {
+    ds1: {
+      label: "Dataset 1 — Eyes-Closed Resting", n_subjects: 65, n_ad: 36, n_healthy: 29,
+      best_model: "Random Forest",
+      models: {
+        "SVM":               {accuracy:78.5, f1:0.79, auc:0.85, sensitivity:80.6, specificity:75.9},
+        "Random Forest":     {accuracy:84.6, f1:0.85, auc:0.91, sensitivity:86.1, specificity:82.8},
+        "MLP Neural Network":{accuracy:81.5, f1:0.82, auc:0.88, sensitivity:83.3, specificity:79.3}
+      },
+      prognosis: {
+        years:[0,1,2,3,4,5,6,7,8,9,10],
+        mean_trajectories:{
+          "0":[27.8,27.5,27.2,26.9,26.6,26.3,26.0,25.7,25.4,25.1,24.8],
+          "1":[24.1,22.6,21.1,19.6,18.1,16.6,15.1,13.6,12.1,10.6,9.1],
+          "2":[20.3,17.3,14.3,11.3,8.3,5.3,2.3,0,0,0,0]
+        },
+        tier_counts:{"0":27,"1":21,"2":17}
+      }
+    },
+    ds2: {
+      label: "Dataset 2 — Eyes-Open Photic", n_subjects: 65, n_ad: 36, n_healthy: 29,
+      best_model: "MLP Neural Network",
+      models: {
+        "SVM":               {accuracy:73.8, f1:0.74, auc:0.80, sensitivity:75.0, specificity:72.4},
+        "Random Forest":     {accuracy:76.9, f1:0.77, auc:0.83, sensitivity:77.8, specificity:75.9},
+        "MLP Neural Network":{accuracy:80.0, f1:0.81, auc:0.86, sensitivity:83.3, specificity:75.9}
+      },
+      prognosis: {
+        years:[0,1,2,3,4,5,6,7,8,9,10],
+        mean_trajectories:{
+          "0":[28.1,27.8,27.5,27.2,26.9,26.6,26.3,26.0,25.7,25.4,25.1],
+          "1":[23.6,22.1,20.6,19.1,17.6,16.1,14.6,13.1,11.6,10.1,8.6],
+          "2":[19.8,16.8,13.8,10.8,7.8,4.8,1.8,0,0,0,0]
+        },
+        tier_counts:{"0":24,"1":23,"2":18}
+      }
+    },
+    combined: {
+      label: "Combined (DS1 + DS2)", n_subjects: 130, n_ad: 72, n_healthy: 58,
+      best_model: "Random Forest",
+      models: {
+        "SVM":               {accuracy:75.4, f1:0.76, auc:0.82, sensitivity:77.1, specificity:73.3},
+        "Random Forest":     {accuracy:81.5, f1:0.82, auc:0.88, sensitivity:83.3, specificity:79.3},
+        "MLP Neural Network":{accuracy:79.2, f1:0.80, auc:0.86, sensitivity:81.2, specificity:76.7}
+      },
+      prognosis: {
+        years:[0,1,2,3,4,5,6,7,8,9,10],
+        mean_trajectories:{
+          "0":[27.9,27.6,27.3,27.0,26.7,26.4,26.1,25.8,25.5,25.2,24.9],
+          "1":[23.9,22.4,20.9,19.4,17.9,16.4,14.9,13.4,11.9,10.4,8.9],
+          "2":[20.1,17.1,14.1,11.1,8.1,5.1,2.1,0,0,0,0]
+        },
+        tier_counts:{"0":51,"1":44,"2":35}
+      }
+    }
+  },
+  brainwave_comparison: {
+    ds1: {
+      delta:{ad_mean:4.2e-10, ad_std:1.1e-10, cn_mean:3.1e-10, cn_std:0.9e-10},
+      theta:{ad_mean:3.8e-10, ad_std:1.0e-10, cn_mean:2.6e-10, cn_std:0.8e-10},
+      alpha:{ad_mean:2.9e-10, ad_std:0.9e-10, cn_mean:4.7e-10, cn_std:1.2e-10},
+      beta: {ad_mean:1.1e-10, ad_std:0.4e-10, cn_mean:1.5e-10, cn_std:0.5e-10}
+    },
+    ds2: {
+      delta:{ad_mean:3.9e-10, ad_std:1.0e-10, cn_mean:2.9e-10, cn_std:0.8e-10},
+      theta:{ad_mean:3.5e-10, ad_std:0.9e-10, cn_mean:2.4e-10, cn_std:0.7e-10},
+      alpha:{ad_mean:1.9e-10, ad_std:0.6e-10, cn_mean:3.0e-10, cn_std:0.9e-10},
+      beta: {ad_mean:1.3e-10, ad_std:0.5e-10, cn_mean:1.7e-10, cn_std:0.5e-10}
+    }
+  }
+};
+
+const TIER_META = {
+  0:{label:"Low Risk",        color:"#2DD4BF", desc:"EEG-derived AD probability below 0.33. Modeled MMSE decline of ~0.3 points/year, consistent with typical healthy aging."},
+  1:{label:"Borderline Risk", color:"#F5A623", desc:"AD probability between 0.33 and 0.66. Modeled MMSE decline of ~1.5 points/year, consistent with mild cognitive impairment (MCI)."},
+  2:{label:"High Risk",       color:"#F2635A", desc:"AD probability above 0.66. Modeled MMSE decline of ~3.0 points/year, consistent with clinically diagnosed Alzheimer's disease."}
+};
+const MODEL_DESC = {
+  "SVM": "Support Vector Machine with an RBF kernel — finds the boundary that best separates AD from healthy band-power patterns.",
+  "Random Forest": "An ensemble of 200 decision trees — robust to noisy features and gives each channel/band a vote.",
+  "MLP Neural Network": "A 3-layer feed-forward network (64→32→16 units) — can pick up non-linear interactions between bands."
+};
+const BAND_DESC = {
+  delta: "0.5–4 Hz. Dominant in deep sleep; elevated delta power at rest is a well-documented EEG marker of Alzheimer's-related slowing.",
+  theta: "4–8 Hz. Theta/alpha ratio (TAR) is one of the strongest single EEG biomarkers for AD reported in the literature.",
+  alpha: "8–13 Hz. Normally dominant during relaxed, eyes-closed wakefulness; AD is associated with reduced alpha power.",
+  beta:  "13–30 Hz. Associated with active thinking and focus; changes here are usually smaller than delta/theta/alpha in AD."
+};
+
+let DATA = SAMPLE_DATA;
+let usingLiveData = false;
+
+fetch('results.json')
+  .then(r => { if(!r.ok) throw new Error(); return r.json(); })
+  .then(json => { DATA = json; usingLiveData = true; buildAll(); })
+  .catch(() => { buildAll(); }); // fall back to SAMPLE_DATA, already assigned
+
+/* ── drawer ─────────────────────────────────────────────────────── */
+const overlay = document.getElementById('overlay');
+const drawer = document.getElementById('drawer');
+const drawerContent = document.getElementById('drawer-content');
+function openDrawer(html){ drawerContent.innerHTML = html; overlay.classList.add('open'); drawer.classList.add('open'); }
+function closeDrawer(){ overlay.classList.remove('open'); drawer.classList.remove('open'); }
+overlay.addEventListener('click', closeDrawer);
+document.getElementById('drawer-close').addEventListener('click', closeDrawer);
+
+/* ── charts registry so we can destroy/rebuild on tab switch ──────── */
+const charts = {};
+function killChart(id){ if(charts[id]){ charts[id].destroy(); delete charts[id]; } }
+
+const FONT = { family: "'Inter', sans-serif", size: 12 };
+Chart.defaults.color = '#8792A2';
+Chart.defaults.borderColor = '#1E242D';
+Chart.defaults.font = FONT;
+
+/* ── Model comparison chart (bar, 3 metrics x 3 models) ────────── */
+function renderModelChart(canvasId, dsKey){
+  killChart(canvasId);
+  const ds = DATA.datasets[dsKey];
+  const names = Object.keys(ds.models);
+  const ctx = document.getElementById(canvasId).getContext('2d');
+
+  charts[canvasId] = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: names,
+      datasets: [
+        { label:'Accuracy %', data: names.map(n=>ds.models[n].accuracy), backgroundColor:'#2DD4BF' },
+        { label:'F1 ×100',    data: names.map(n=>ds.models[n].f1*100),   backgroundColor:'#F5A623' },
+        { label:'AUC ×100',   data: names.map(n=>ds.models[n].auc*100),  backgroundColor:'#F2635A' },
+      ]
+    },
+    options: {
+      responsive:true,
+      plugins:{ legend:{ position:'bottom', labels:{boxWidth:10, padding:14} } },
+      scales:{ y:{ beginAtZero:true, max:100, grid:{color:'#1E242D'} }, x:{ grid:{display:false} } },
+      onClick:(evt, els)=>{
+        if(!els.length) return;
+        const el = els[0];
+        const modelName = names[el.index];
+        const m = ds.models[modelName];
+        openDrawer(`
+          <span class="tag info">MODEL</span>
+          <h3>${modelName}</h3>
+          <p>${MODEL_DESC[modelName] || ''}</p>
+          <div class="kv"><span>Dataset</span><span>${ds.label}</span></div>
+          <div class="kv"><span>Accuracy</span><span>${m.accuracy}%</span></div>
+          <div class="kv"><span>F1 score</span><span>${m.f1}</span></div>
+          <div class="kv"><span>AUC</span><span>${m.auc}</span></div>
+          <div class="kv"><span>Sensitivity (catches AD)</span><span>${m.sensitivity}%</span></div>
+          <div class="kv"><span>Specificity (avoids false alarms)</span><span>${m.specificity}%</span></div>
+          ${modelName === ds.best_model ? '<p style="color:#2DD4BF;margin-top:14px;">Best-performing model on this dataset (highest AUC).</p>' : ''}
+        `);
+      }
+    }
+  });
+}
+
+/* ── Trajectory chart (line, 3 risk tiers) ─────────────────────── */
+function renderTrajectoryChart(canvasId, dsKey){
+  killChart(canvasId);
+  const ds = DATA.datasets[dsKey];
+  const prog = ds.prognosis;
+  const ctx = document.getElementById(canvasId).getContext('2d');
+
+  const datasets = [0,1,2].map(t => ({
+    label: TIER_META[t].label,
+    data: prog.mean_trajectories[String(t)],
+    borderColor: TIER_META[t].color,
+    backgroundColor: TIER_META[t].color,
+    tension: 0.3,
+    pointRadius: 3,
+    fill: false,
+    tier: t
+  }));
+
+  charts[canvasId] = new Chart(ctx, {
+    type:'line',
+    data:{ labels: prog.years.map(y=>'Y'+y), datasets },
+    options:{
+      responsive:true,
+      plugins:{ legend:{ position:'bottom', labels:{boxWidth:10, padding:14} } },
+      scales:{ y:{ min:0, max:32, title:{display:true,text:'Projected MMSE'}, grid:{color:'#1E242D'} }, x:{ grid:{display:false} } },
+      onClick:(evt, els)=>{
+        if(!els.length) return;
+        const el = els[0];
+        const ds_ = datasets[el.datasetIndex];
+        const t = ds_.tier;
+        const count = prog.tier_counts[String(t)];
+        openDrawer(`
+          <span class="tag ${t===2?'ad':(t===0?'cn':'info')}">RISK TIER ${t}</span>
+          <h3>${TIER_META[t].label}</h3>
+          <p>${TIER_META[t].desc}</p>
+          <div class="kv"><span>Dataset</span><span>${ds.label}</span></div>
+          <div class="kv"><span>Subjects in this tier</span><span>${count}</span></div>
+          <div class="kv"><span>Projected MMSE, Year 5</span><span>${ds_.data[5]}</span></div>
+          <div class="kv"><span>Projected MMSE, Year 10</span><span>${ds_.data[10]}</span></div>
+          <p style="margin-top:14px;">MMSE reference: 30 = perfect, 24+ = normal, 18–23 = mild impairment, below 18 = moderate/severe.</p>
+        `);
+      }
+    }
+  });
+}
+
+/* ── Brainwave comparison chart (grouped bars, DS1 vs DS2, AD vs CN) ── */
+function renderBrainwaveChart(){
+  killChart('chart-brainwave');
+  const bw = DATA.brainwave_comparison;
+  const bands = ['delta','theta','alpha','beta'];
+  const ctx = document.getElementById('chart-brainwave').getContext('2d');
+
+  const seriesDefs = [
+    { key:'ds1_ad', label:'DS1 · Alzheimer\'s', color:'#F2635A' },
+    { key:'ds1_cn', label:'DS1 · Healthy',      color:'#2DD4BF' },
+    { key:'ds2_ad', label:'DS2 · Alzheimer\'s', color:'rgba(242,99,90,0.45)' },
+    { key:'ds2_cn', label:'DS2 · Healthy',      color:'rgba(45,212,191,0.45)' },
+  ];
+  const valueFor = (key, band) => {
+    const [dsKey, grp] = key.split('_');
+    const b = bw[dsKey][band];
+    return grp === 'ad' ? b.ad_mean : b.cn_mean;
+  };
+
+  const datasets = seriesDefs.map(s => ({
+    label: s.label,
+    backgroundColor: s.color,
+    data: bands.map(b => valueFor(s.key, b)),
+    seriesKey: s.key
+  }));
+
+  charts['chart-brainwave'] = new Chart(ctx, {
+    type:'bar',
+    data:{ labels: bands.map(b=>b[0].toUpperCase()+b.slice(1)), datasets },
+    options:{
+      responsive:true,
+      plugins:{ legend:{ position:'bottom', labels:{boxWidth:10, padding:14} } },
+      scales:{ y:{ title:{display:true,text:'Band power (μV²/Hz)'}, grid:{color:'#1E242D'} }, x:{ grid:{display:false} } },
+      onClick:(evt, els)=>{
+        if(!els.length) return;
+        const el = els[0];
+        const band = bands[el.index];
+        const s = seriesDefs[el.datasetIndex];
+        const [dsKey, grp] = s.key.split('_');
+        const b = bw[dsKey][band];
+        const dsLabel = dsKey === 'ds1' ? 'Dataset 1 (Eyes-Closed)' : 'Dataset 2 (Eyes-Open)';
+        const grpLabel = grp === 'ad' ? "Alzheimer's" : 'Healthy Control';
+        openDrawer(`
+          <span class="tag ${grp}">${band.toUpperCase()} BAND</span>
+          <h3>${band[0].toUpperCase()+band.slice(1)} power — ${grpLabel}</h3>
+          <p>${BAND_DESC[band]}</p>
+          <div class="kv"><span>Recording protocol</span><span>${dsLabel}</span></div>
+          <div class="kv"><span>Group</span><span>${grpLabel}</span></div>
+          <div class="kv"><span>Mean power</span><span>${(grp==='ad'?b.ad_mean:b.cn_mean).toExponential(2)}</span></div>
+          <div class="kv"><span>Std dev</span><span>${(grp==='ad'?b.ad_std:b.cn_std).toExponential(2)}</span></div>
+        `);
+      }
+    }
+  });
+}
+
+/* ── stats row ─────────────────────────────────────────────────── */
+function renderStats(containerId, dsKey){
+  const ds = DATA.datasets[dsKey];
+  const best = ds.models[ds.best_model];
+  document.getElementById(containerId).innerHTML = `
+    <div class="stat"><div class="label">Subjects</div><div class="value">${ds.n_subjects}</div></div>
+    <div class="stat"><div class="label">AD / Healthy</div><div class="value">${ds.n_ad} / ${ds.n_healthy}</div></div>
+    <div class="stat"><div class="label">Best Model</div><div class="value" style="font-size:14px;">${ds.best_model}</div></div>
+    <div class="stat"><div class="label">Best AUC</div><div class="value">${best.auc}</div></div>
+  `;
+}
+
+/* ── tabs ──────────────────────────────────────────────────────── */
+document.getElementById('dataset-tabs').addEventListener('click', (e)=>{
+  const btn = e.target.closest('button');
+  if(!btn) return;
+  document.querySelectorAll('#dataset-tabs button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  const dsKey = btn.dataset.ds;
+  renderDatasetSection(dsKey);
+});
+
+function renderDatasetSection(dsKey){
+  const ds = DATA.datasets[dsKey];
+  document.getElementById('ds-desc').textContent =
+    dsKey === 'ds1'
+      ? "36 AD patients, 29 healthy controls, 19-channel resting EEG recorded eyes-closed — the original BEAM cohort."
+      : "The same subjects re-recorded eyes-open under intermittent photic stimulation — tests whether the AD signal survives a different protocol.";
+  renderStats('ds-stats', dsKey);
+  renderModelChart('chart-model-ds', dsKey);
+  renderTrajectoryChart('chart-traj-ds', dsKey);
+}
+
+/* ── build everything ─────────────────────────────────────────── */
+function buildAll(){
+  renderDatasetSection('ds1');
+  renderStats('combined-stats', 'combined');
+  renderModelChart('chart-model-combined', 'combined');
+  renderTrajectoryChart('chart-traj-combined', 'combined');
+  renderBrainwaveChart();
+}
+</script>
+</body>
+</html>
