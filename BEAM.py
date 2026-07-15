@@ -49,7 +49,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATASET_PATH  = os.path.join(BASE_DIR, "data", "ds004504")
 DATASET_PATH2 = os.path.join(BASE_DIR, "data", "ds006036")
 CACHE_FILE    = os.path.join(BASE_DIR, "results", "features_cache.npz")
-OUTPUT_JSON   = os.path.join(BASE_DIR, "dashboard", "results.json")
+OUTPUT_JSON = os.path.join(BASE_DIR, "docs", "results.json")
 
 FS                = 500
 EPOCH_LENGTH      = 30
