@@ -155,155 +155,203 @@ def make_models():
         "MLP Neural Network": Pipeline([
             ("scaler", StandardScaler()),
             ("clf", MLPClassifier(hidden_layer_sizes=(64, 32, 16), activation="relu",
-                                   solver="adam", alpha=0.01, learning_rate="adaptive",
-                                   max_iter=500, early_stopping=True,
-                                   validation_fraction=0.15, random_state=42)),
+                                  solver="adam", alpha=0.01, learning_rate="adaptive",
+                                  max_iter=500, early_stopping=True,
+                                  validation_fraction=0.15, random_state=42)),
         ]),
     }
 
 
 def train_and_evaluate(X, y):
-    """5-fold CV for every model. Returns metrics + ROC points + the fitted best model."""
+    """Performs 5-Fold Stratified CV to calculate clean, non-leaked metrics."""
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
     models = make_models()
-    metrics, roc_points = {}, {}
+    metrics = {}
+    
+    # We will use the best performing model to output individual risk probabilities
+    best_auc = -1
+    best_model_name = ""
+    best_fitted_pipeline = None
 
     for name, model in models.items():
+        # Get out-of-fold predictions to evaluate accuracy cleanly
         y_pred = cross_val_predict(model, X, y, cv=cv, method="predict")
         y_prob = cross_val_predict(model, X, y, cv=cv, method="predict_proba")[:, 1]
+        
         cm = confusion_matrix(y, y_pred)
-        sens = cm[1, 1] / (cm[1, 1] + cm[1, 0]) if (cm[1, 1] + cm[1, 0]) else 0
-        spec = cm[0, 0] / (cm[0, 0] + cm[0, 1]) if (cm[0, 0] + cm[0, 1]) else 0
-        fpr, tpr, _ = roc_curve(y, y_prob)
+        tn, fp, fn, tp = cm.ravel()
+        
+        sens = (tp / (tp + fn)) * 100 if (tp + fn) > 0 else 0
+        spec = (tn / (tn + fp)) * 100 if (tn + fp) > 0 else 0
+        acc = accuracy_score(y, y_pred) * 100
+        f1 = f1_score(y, y_pred)
+        auc = roc_auc_score(y, y_prob)
 
         metrics[name] = {
-            "accuracy": round(accuracy_score(y, y_pred) * 100, 2),
-            "f1": round(f1_score(y, y_pred), 4),
-            "auc": round(roc_auc_score(y, y_prob), 4),
-            "sensitivity": round(sens * 100, 2),
-            "specificity": round(spec * 100, 2),
-            "confusion_matrix": cm.tolist(),
+            "accuracy": round(acc, 1),
+            "f1": round(f1, 2),
+            "auc": round(auc, 2),
+            "sensitivity": round(sens, 1),
+            "specificity": round(spec, 1)
         }
-        step = max(1, len(fpr) // 30)
-        roc_points[name] = {"fpr": fpr[::step].tolist(), "tpr": tpr[::step].tolist()}
 
-    best_name = max(metrics, key=lambda n: metrics[n]["auc"])
-    best_model = models[best_name].fit(X, y)
-    print(f"  Best model: {best_name} (AUC={metrics[best_name]['auc']})")
-    return metrics, roc_points, best_name, best_model
+        if auc > best_auc:
+            best_auc = auc
+            best_model_name = name
+            # Fit the final model on all data to extract final probabilities
+            best_fitted_pipeline = model.fit(X, y)
+
+    # Predict final clinical risk probabilities for the prognosis module
+    final_probs = best_fitted_pipeline.predict_proba(X)[:, 1]
+
+    return metrics, best_model_name, final_probs
 
 
-# ── STEP 4: PROGNOSIS ────────────────────────────────────────────────────
-def build_prognosis(X, y, best_model, seed=42):
+# ── STEP 4: COGNITIVE PROGNOSIS MODEL ───────────────────────────────────
+def generate_prognosis(y_probs):
     """
-    Clinically-grounded 10-year MMSE projection. We don't have longitudinal
-    data, so each subject's EEG-derived AD probability sets a risk tier,
-    and published annual MMSE decline rates (Tombaugh & McIntyre 1992;
-    Mitchell 2009) project their trajectory forward.
+    Groups subjects into 3 risk tiers based on model probabilities:
+    Tier 0 (Low Risk, p < 0.33) -> Normal cognitive aging decline (~0.3 MMSE/year)
+    Tier 1 (Borderline, 0.33 <= p <= 0.66) -> MCI-like decline (~1.5 MMSE/year)
+    Tier 2 (High Risk, p > 0.66) -> AD-like decline (~3.0 MMSE/year)
     """
-    rng = np.random.default_rng(seed)
-    ad_prob = best_model.predict_proba(X)[:, 1]
-    tier = np.where(ad_prob < 0.33, 0, np.where(ad_prob < 0.66, 1, 2))
-    decline_rate = {0: 0.3, 1: 1.5, 2: 3.0}
-    baseline = np.clip(
-        np.where(y == 1, rng.normal(20, 2, len(y)), rng.normal(28, 1, len(y))), 10, 30
-    )
-    years = list(range(0, 11))
+    years = list(range(11))
+    tier_assignments = []
+    
+    for p in y_probs:
+        if p < 0.33:
+            tier_assignments.append(0)
+        elif p <= 0.66:
+            tier_assignments.append(1)
+        else:
+            tier_assignments.append(2)
 
-    subjects = []
-    tier_trajectories = {0: [], 1: [], 2: []}
-    for i in range(len(X)):
-        traj = np.clip(baseline[i] - decline_rate[tier[i]] * np.array(years), 0, 30)
-        tier_trajectories[int(tier[i])].append(traj.tolist())
-        subjects.append({
-            "label": int(y[i]),
-            "ad_prob": round(float(ad_prob[i]), 4),
-            "risk_tier": int(tier[i]),
-            "baseline_mmse": round(float(baseline[i]), 1),
-            "mmse_at_5yr": round(float(traj[5]), 1),
-            "mmse_at_10yr": round(float(traj[10]), 1),
-        })
-
-    mean_trajectories = {
-        str(t): (np.mean(tier_trajectories[t], axis=0).tolist() if tier_trajectories[t] else None)
-        for t in (0, 1, 2)
-    }
-    tier_counts = {str(t): len(tier_trajectories[t]) for t in (0, 1, 2)}
+    tier_counts = {str(t): tier_assignments.count(t) for t in [0, 1, 2]}
+    
+    # Calculate baseline starting MMSE based on probabilities
+    # (High risk subjects start with lower baseline cognitive scores)
+    trajectories = {}
+    for t in [0, 1, 2]:
+        if t == 0:
+            start, slope = 28.0, 0.3
+        elif t == 1:
+            start, slope = 24.0, 1.5
+        else:
+            start, slope = 20.0, 3.0
+            
+        traj = []
+        for y in years:
+            score = max(0.0, start - (slope * y))
+            traj.append(round(score, 1))
+        trajectories[str(t)] = traj
 
     return {
         "years": years,
-        "mean_trajectories": mean_trajectories,
-        "tier_counts": tier_counts,
-        "subjects": subjects,
+        "mean_trajectories": trajectories,
+        "tier_counts": tier_counts
     }
 
 
-# ── STEP 5: BAND POWER SUMMARY ──────────────────────────────────────────
-def band_power_summary(X, y):
-    """Mean +/- std power per band, split AD vs Healthy, averaged across channels."""
-    n_ch = X.shape[1] // N_FEAT_PER_CHANNEL
+# ── STEP 5: BRAINWAVE POWER SUMMARY FOR CHARTS ──────────────────────────
+def get_brainwave_summary(X, y):
+    """Aggregates average band power for AD and Healthy subjects."""
+    # Index map matching our extract_features layout: [delta, theta, alpha, beta, tar, speed]
+    # We average over all extracted channel bands
+    ad_idx = (y == 1)
+    cn_idx = (y == 0)
+
     summary = {}
-    for b, band_name in enumerate(BAND_NAMES):
-        cols = [b + ch * N_FEAT_PER_CHANNEL for ch in range(n_ch)]
-        ad_vals = X[y == 1][:, cols].mean(axis=1)
-        cn_vals = X[y == 0][:, cols].mean(axis=1)
-        summary[band_name] = {
-            "ad_mean": float(np.mean(ad_vals)), "ad_std": float(np.std(ad_vals)),
-            "cn_mean": float(np.mean(cn_vals)), "cn_std": float(np.std(cn_vals)),
+    bands_keys = ["delta", "theta", "alpha", "beta"]
+    for i, band in enumerate(bands_keys):
+        # We grab all features corresponding to this band across the wearable channels
+        band_feats = X[:, i::N_FEAT_PER_CHANNEL]
+        
+        ad_vals = band_feats[ad_idx].flatten()
+        cn_vals = band_feats[cn_idx].flatten()
+
+        summary[band] = {
+            "ad_mean": float(np.mean(ad_vals)),
+            "ad_std": float(np.std(ad_vals)),
+            "cn_mean": float(np.mean(cn_vals)),
+            "cn_std": float(np.std(cn_vals))
         }
     return summary
 
 
-# ── MAIN ──────────────────────────────────────────────────────────────────
+# ── STEP 6: PIPELINE RUNNER ─────────────────────────────────────────────
 def main():
-    print("=" * 60)
-    print("BEAM pipeline — simplified")
-    print("=" * 60)
+    print("Starting BEAM Machine Learning Pipeline...")
+    
+    # 1. Load subjects metadata
+    try:
+        df = load_participants(DATASET_PATH)
+    except Exception as e:
+        print(f"Error loading metadata from {DATASET_PATH}: {e}")
+        return
 
-    participants = load_participants(DATASET_PATH)
-
+    # 2. Extract or Load Features
     if os.path.exists(CACHE_FILE):
-        print("Loading cached features...")
+        print(f"Loading cached features from {CACHE_FILE}...")
         cache = np.load(CACHE_FILE, allow_pickle=True)
-        feats = cache["feats"].item()
-    else:
-        feats = build_feature_sets(participants)
-        os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
-        np.savez(CACHE_FILE, feats=feats)
-        print(f"Features cached -> {CACHE_FILE}")
-
-    output = {"datasets": {}, "brainwave_comparison": {}}
-
-    for key in ("ds1", "ds2", "combined"):
-        X, y = feats[key]["X"], feats[key]["y"]
-        print(f"\n--- {key} ({X.shape[0]} recordings) ---")
-        metrics, roc_points, best_name, best_model = train_and_evaluate(X, y)
-        prognosis = build_prognosis(X, y, best_model)
-        bands = band_power_summary(X, y)
-
-        output["datasets"][key] = {
-            "label": DATASETS.get(key, {}).get("label", "Combined (DS1 + DS2)"),
-            "n_subjects": int(X.shape[0]),
-            "n_ad": int((y == 1).sum()),
-            "n_healthy": int((y == 0).sum()),
-            "models": metrics,
-            "roc": roc_points,
-            "best_model": best_name,
-            "prognosis": prognosis,
-            "band_power": bands,
+        feature_sets = {
+            "ds1": {"X": cache["ds1_X"], "y": cache["ds1_y"]},
+            "ds2": {"X": cache["ds2_X"], "y": cache["ds2_y"]},
+            "combined": {"X": cache["combined_X"], "y": cache["combined_y"]}
         }
+    else:
+        print("Extracting features from scratch (this may take a few minutes)...")
+        feature_sets = build_feature_sets(df)
+        os.makedirs(os.path.dirname(CACHE_FILE), exist_ok=True)
+        np.savez(CACHE_FILE, 
+                 ds1_X=feature_sets["ds1"]["X"], ds1_y=feature_sets["ds1"]["y"],
+                 ds2_X=feature_sets["ds2"]["X"], ds2_y=feature_sets["ds2"]["y"],
+                 combined_X=feature_sets["combined"]["X"], combined_y=feature_sets["combined"]["y"])
+        print("Features cached successfully!")
 
-    # Brainwave comparison: DS1 vs DS2, band power for AD and CN separately
-    output["brainwave_comparison"] = {
-        "ds1": output["datasets"]["ds1"]["band_power"],
-        "ds2": output["datasets"]["ds2"]["band_power"],
+    # 3. Process each dataset
+    output_data = {
+        "datasets": {},
+        "brainwave_comparison": {}
     }
 
+    for key in ["ds1", "ds2", "combined"]:
+        X = feature_sets[key]["X"]
+        y = feature_sets[key]["y"]
+        
+        n_subjects = len(y)
+        n_ad = int(sum(y == 1))
+        n_healthy = int(sum(y == 0))
+        
+        print(f"\nEvaluating dataset: {key.upper()} (N={n_subjects})...")
+        
+        # Cross-validate models
+        metrics, best_model, final_probs = train_and_evaluate(X, y)
+        
+        # Calculate cognitive trajectory curves based on risk
+        prog = generate_prognosis(final_probs)
+        
+        label = "Combined (DS1 + DS2)" if key == "combined" else DATASETS[key]["label"]
+
+        output_data["datasets"][key] = {
+            "label": label,
+            "n_subjects": n_subjects,
+            "n_ad": n_ad,
+            "n_healthy": n_healthy,
+            "best_model": best_model,
+            "models": metrics,
+            "prognosis": prog
+        }
+
+        # Calculate brainwave summaries for ds1 & ds2 (exclude combined here to prevent duplicate mapping)
+        if key != "combined":
+            output_data["brainwave_comparison"][key] = get_brainwave_summary(X, y)
+
+    # 4. Save results to results.json
     os.makedirs(os.path.dirname(OUTPUT_JSON), exist_ok=True)
     with open(OUTPUT_JSON, "w") as f:
-        json.dump(output, f, indent=2)
-    print(f"\nSaved -> {OUTPUT_JSON}")
-    print("Open dashboard/index.html to view results.")
+        json.dump(output_data, f, indent=2)
+        
+    print(f"\nPipeline successfully completed! Output saved to: {OUTPUT_JSON}")
 
 
 if __name__ == "__main__":
