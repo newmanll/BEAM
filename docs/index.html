@@ -18,6 +18,7 @@
   body{margin:0;background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;-webkit-font-smoothing:antialiased;}
   h1,h2,h3{font-family:'Space Grotesk',sans-serif;margin:0;}
   .mono{font-family:'IBM Plex Mono',monospace;}
+  a{color:var(--teal);}
 
   /* ── Header / signature waveform ─────────────────────────────── */
   header{position:relative;overflow:hidden;border-bottom:1px solid var(--border);padding:48px 32px 32px;}
@@ -36,6 +37,8 @@
   .section-head h2{font-size:20px;}
   .section-head .num{color:var(--muted-2);font-family:'IBM Plex Mono',monospace;font-size:13px;margin-right:8px;}
   .section-desc{color:var(--muted);font-size:13.5px;max-width:640px;line-height:1.55;}
+  .section-desc a{color:var(--teal);text-decoration:none;border-bottom:1px dotted var(--teal);}
+  .section-desc a:hover{color:var(--text);}
 
   /* ── Tabs ─────────────────────────────────────────────────────── */
   .tabs{display:inline-flex;background:var(--panel);border:1px solid var(--border);border-radius:999px;padding:4px;gap:2px;}
@@ -57,6 +60,26 @@
   .stat .value{font-family:'IBM Plex Mono',monospace;font-size:20px;font-weight:500;color:var(--teal);}
 
   .click-hint{color:var(--muted-2);font-size:11px;font-family:'IBM Plex Mono',monospace;margin-top:10px;}
+
+  /* ── Note callout (alpha reactivity, etc.) ───────────────────── */
+  .note{background:var(--panel);border:1px solid var(--border);border-left:3px solid var(--amber);border-radius:var(--radius);padding:16px 20px;margin-bottom:18px;}
+  .note .note-label{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--amber);margin-bottom:8px;}
+  .note p{color:var(--muted);font-size:13.5px;line-height:1.6;margin:0;}
+  .note p + p{margin-top:8px;}
+  .note a{color:var(--teal);text-decoration:none;border-bottom:1px dotted var(--teal);}
+  .note a:hover{color:var(--text);}
+
+  /* ── Cross-validation diagram ─────────────────────────────────── */
+  .cv-diagram{display:flex;flex-direction:column;gap:6px;margin:6px 0 4px;}
+  .cv-row{display:grid;grid-template-columns:64px repeat(5,1fr);align-items:center;gap:6px;}
+  .cv-row .cv-fold-label{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);}
+  .cv-seg{height:26px;border-radius:5px;background:rgba(45,212,191,.18);border:1px solid rgba(45,212,191,.3);}
+  .cv-seg.test{background:rgba(245,166,35,.25);border:1px solid var(--amber);}
+  .cv-legend{display:flex;gap:18px;margin-top:14px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);}
+  .cv-legend span{display:inline-flex;align-items:center;gap:6px;}
+  .cv-legend i{width:10px;height:10px;border-radius:3px;display:inline-block;}
+  .cv-legend i.train{background:rgba(45,212,191,.5);border:1px solid var(--teal);}
+  .cv-legend i.test{background:rgba(245,166,35,.5);border:1px solid var(--amber);}
 
   /* ── Detail drawer ────────────────────────────────────────────── */
   .drawer-overlay{position:fixed;inset:0;background:rgba(6,8,11,.55);opacity:0;pointer-events:none;transition:opacity .2s;z-index:40;}
@@ -92,15 +115,16 @@
 
 <main>
 
-  <!-- SECTION 1: PER-DATASET -->
+  <!-- SECTION 1: MODEL COMPARISON & TRAJECTORY (DS1 / DS2 / COMBINED) -->
   <section id="sec-per-dataset">
     <div class="section-head">
       <div>
-        <h2><span class="num">01</span>Model Comparison &amp; Trajectory — By Dataset</h2>
+        <h2><span class="num">01</span>Model Comparison &amp; Trajectory</h2>
       </div>
       <div class="tabs" id="dataset-tabs">
         <button data-ds="ds1" class="active">DS1 · Eyes-Closed</button>
         <button data-ds="ds2">DS2 · Eyes-Open</button>
+        <button data-ds="combined">Combined</button>
       </div>
     </div>
     <p class="section-desc" id="ds-desc"></p>
@@ -123,28 +147,31 @@
     </div>
   </section>
 
-  <!-- SECTION 2: COMBINED -->
-  <section id="sec-combined">
+  <!-- SECTION 2: CROSS-VALIDATION -->
+  <section id="sec-cv">
     <div class="section-head">
-      <div><h2><span class="num">02</span>Model Comparison &amp; Trajectory — Combined</h2></div>
+      <div><h2><span class="num">02</span>Cross-Validation</h2></div>
     </div>
-    <p class="section-desc">Both protocols pooled into one training set (130 recordings), so each model sees eyes-closed and eyes-open patterns together.</p>
+    <p class="section-desc">Every metric above comes from 5-fold <em>stratified</em> cross-validation, not a single train/test split. Each subject's prediction is made by a model that never saw that subject during training, so the reported accuracy, F1, and AUC are out-of-fold and free of leakage.</p>
 
-    <div class="stat-row" id="combined-stats"></div>
+    <div class="stat-row">
+      <div class="stat"><div class="label">Folds</div><div class="value">5</div></div>
+      <div class="stat"><div class="label">Splitting</div><div class="value" style="font-size:14px;">Stratified</div></div>
+      <div class="stat"><div class="label">Predictions used</div><div class="value" style="font-size:14px;">Out-of-fold</div></div>
+      <div class="stat"><div class="label">Shuffle seed</div><div class="value">42</div></div>
+    </div>
 
-    <div class="grid">
-      <div class="card">
-        <h3>Model Comparison</h3>
-        <div class="hint">Accuracy / F1 / AUC per classifier — click a bar for the full readout</div>
-        <canvas id="chart-model-combined"></canvas>
-        <div class="click-hint">↳ click a bar</div>
+    <div class="card">
+      <h3>How the 5 folds are built</h3>
+      <div class="hint">Each row is one training run — the amber block is the held-out fold used only for scoring</div>
+      <div class="cv-diagram" id="cv-diagram"></div>
+      <div class="cv-legend">
+        <span><i class="train"></i>trained on</span>
+        <span><i class="test"></i>held out &amp; scored</span>
       </div>
-      <div class="card">
-        <h3>Cognitive Trajectory</h3>
-        <div class="hint">Mean projected MMSE by EEG risk tier — click a line for the tier detail</div>
-        <canvas id="chart-traj-combined"></canvas>
-        <div class="click-hint">↳ click a line</div>
-      </div>
+      <p style="color:var(--muted);font-size:12.5px;line-height:1.6;margin-top:14px;">
+        Subjects are split into 5 folds while preserving the AD/Healthy ratio in each one (stratification), since the classes aren't perfectly balanced. For each of the 5 runs, a model trains on 4 folds and predicts on the 1 held-out fold. After 5 runs, every subject has exactly one out-of-fold prediction, and those are what get turned into accuracy, F1, AUC, sensitivity, and specificity — the same process is repeated independently for SVM, Random Forest, and the MLP.
+      </p>
     </div>
   </section>
 
@@ -154,6 +181,12 @@
       <div><h2><span class="num">03</span>Brainwave Comparison — DS1 vs DS2</h2></div>
     </div>
     <p class="section-desc">Average band power per protocol, split by diagnosis. Eyes-open photic stimulation is expected to suppress alpha relative to eyes-closed rest — this chart shows whether that held in each group.</p>
+
+    <div class="note">
+      <div class="note-label">What is alpha reactivity?</div>
+      <p>Alpha power is normally strongest during relaxed, eyes-closed wakefulness and drops sharply the moment the eyes open — a shift called alpha reactivity (or alpha blocking/attenuation). In Alzheimer's disease this drop is blunted: alpha stays abnormally flat between the eyes-closed and eyes-open conditions, which is why comparing DS1 (eyes-closed) against DS2 (eyes-open) alpha power, per group, is informative on its own.</p>
+      <p>For background: <a href="https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7178985/" target="_blank" rel="noopener">Kai et al., "EEG alpha reactivity and cholinergic system integrity in Lewy body dementia and Alzheimer's disease," Alzheimer's Research &amp; Therapy (2020)</a>.</p>
+    </div>
 
     <div class="card">
       <h3>Band Power by Protocol</h3>
@@ -265,8 +298,13 @@ const MODEL_DESC = {
 const BAND_DESC = {
   delta: "0.5–4 Hz. Dominant in deep sleep; elevated delta power at rest is a well-documented EEG marker of Alzheimer's-related slowing.",
   theta: "4–8 Hz. Theta/alpha ratio (TAR) is one of the strongest single EEG biomarkers for AD reported in the literature.",
-  alpha: "8–13 Hz. Normally dominant during relaxed, eyes-closed wakefulness; AD is associated with reduced alpha power.",
+  alpha: "8–13 Hz. Normally dominant during relaxed, eyes-closed wakefulness; AD is associated with reduced alpha power and blunted alpha reactivity to eye opening.",
   beta:  "13–30 Hz. Associated with active thinking and focus; changes here are usually smaller than delta/theta/alpha in AD."
+};
+const DS_DESC = {
+  ds1: "36 AD patients, 29 healthy controls, 19-channel resting EEG recorded eyes-closed — the original BEAM cohort.",
+  ds2: "The same subjects re-recorded eyes-open under intermittent photic stimulation — tests whether the AD signal survives a different protocol.",
+  combined: "DS1 and DS2 pooled into one training set (130 recordings), so each model sees eyes-closed and eyes-open patterns together."
 };
 
 let DATA = SAMPLE_DATA;
@@ -440,6 +478,21 @@ function renderBrainwaveChart(){
   });
 }
 
+/* ── Cross-validation fold diagram (pure CSS, no chart lib needed) ── */
+function renderCVDiagram(){
+  const container = document.getElementById('cv-diagram');
+  const nFolds = 5;
+  let html = '';
+  for(let fold = 0; fold < nFolds; fold++){
+    html += `<div class="cv-row"><div class="cv-fold-label">Fold ${fold+1}</div>`;
+    for(let seg = 0; seg < nFolds; seg++){
+      html += `<div class="cv-seg${seg===fold ? ' test' : ''}"></div>`;
+    }
+    html += `</div>`;
+  }
+  container.innerHTML = html;
+}
+
 /* ── stats row ─────────────────────────────────────────────────── */
 function renderStats(containerId, dsKey){
   const ds = DATA.datasets[dsKey];
@@ -463,11 +516,7 @@ document.getElementById('dataset-tabs').addEventListener('click', (e)=>{
 });
 
 function renderDatasetSection(dsKey){
-  const ds = DATA.datasets[dsKey];
-  document.getElementById('ds-desc').textContent =
-    dsKey === 'ds1'
-      ? "36 AD patients, 29 healthy controls, 19-channel resting EEG recorded eyes-closed — the original BEAM cohort."
-      : "The same subjects re-recorded eyes-open under intermittent photic stimulation — tests whether the AD signal survives a different protocol.";
+  document.getElementById('ds-desc').textContent = DS_DESC[dsKey];
   renderStats('ds-stats', dsKey);
   renderModelChart('chart-model-ds', dsKey);
   renderTrajectoryChart('chart-traj-ds', dsKey);
@@ -476,9 +525,7 @@ function renderDatasetSection(dsKey){
 /* ── build everything ─────────────────────────────────────────── */
 function buildAll(){
   renderDatasetSection('ds1');
-  renderStats('combined-stats', 'combined');
-  renderModelChart('chart-model-combined', 'combined');
-  renderTrajectoryChart('chart-traj-combined', 'combined');
+  renderCVDiagram();
   renderBrainwaveChart();
 }
 </script>
