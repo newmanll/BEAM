@@ -93,7 +93,7 @@ def band_power(signal, fs, band):
     nperseg = min(fs * 2, len(signal))
     freqs, psd = welch(signal, fs=fs, nperseg=nperseg)
     idx = (freqs >= band[0]) & (freqs <= band[1])
-    return float(np.mean(psd[idx]))
+    return float(np.mean(psd[idx]) * 1e12 )
 
 
 def extract_features(raw, fs=FS, channels=WEARABLE_CHANNELS, epoch_len=EPOCH_LENGTH):
