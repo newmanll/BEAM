@@ -44,10 +44,12 @@ mne.set_log_level("WARNING")
 
 
 # ── CONFIGURATION ────────────────────────────────────────────────────────
-DATASET_PATH  = "D:\\CompBioFInal\\ds004504"   # DS1 — eyes-closed resting
-DATASET_PATH2 = "D:\\CompBioFInal\\ds006036"   # DS2 — eyes-open photic
-CACHE_FILE    = "results/features_cache.npz"
-OUTPUT_JSON   = "dashboard/results.json"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+DATASET_PATH  = os.path.join(BASE_DIR, "data", "ds004504")
+DATASET_PATH2 = os.path.join(BASE_DIR, "data", "ds006036")
+CACHE_FILE    = os.path.join(BASE_DIR, "results", "features_cache.npz")
+OUTPUT_JSON   = os.path.join(BASE_DIR, "dashboard", "results.json")
 
 FS                = 500
 EPOCH_LENGTH      = 30
