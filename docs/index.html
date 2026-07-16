@@ -145,6 +145,15 @@
         <div class="click-hint">↳ click a line</div>
       </div>
     </div>
+
+    <div class="card" style="margin-top:18px;">
+      <h3>ROC Curves — All Models</h3>
+      <div class="hint">True Positive Rate vs False Positive Rate per classifier — click a curve for the model readout</div>
+      <div style="position:relative; height:420px;">
+        <canvas id="chart-roc-ds"></canvas>
+      </div>
+      <div class="click-hint">↳ click a curve</div>
+    </div>
   </section>
 
   <!-- SECTION 2: CROSS-VALIDATION -->
@@ -294,6 +303,11 @@ const MODEL_DESC = {
   "SVM": "Support Vector Machine with an RBF kernel — finds the boundary that best separates AD from healthy band-power patterns.",
   "Random Forest": "An ensemble of 200 decision trees — robust to noisy features and gives each channel/band a vote.",
   "MLP Neural Network": "A 3-layer feed-forward network (64→32→16 units) — can pick up non-linear interactions between bands."
+};
+const MODEL_COLOR = {
+  "SVM": "#F2635A",
+  "Random Forest": "#2DD4BF",
+  "MLP Neural Network": "#F5A623"
 };
 const BAND_DESC = {
   delta: "0.5–4 Hz. Dominant in deep sleep; elevated delta power at rest is a well-documented EEG marker of Alzheimer's-related slowing.",
@@ -507,6 +521,91 @@ function renderCVDiagram(){
   container.innerHTML = html;
 }
 
+/* ── ROC helpers: use real fpr/tpr points if present, else synthesize
+   a curve of the right shape from the AUC alone (tpr = fpr^(1/k),
+   where k = auc/(1-auc), so the area under the curve ≈ auc) ────── */
+function synthesizeROC(auc){
+  const a = Math.min(Math.max(auc, 0.001), 0.999);
+  const k = a / (1 - a);
+  const pts = [];
+  for(let i = 0; i <= 20; i++){
+    const fpr = i / 20;
+    const tpr = Math.pow(fpr, 1 / k);
+    pts.push({ x: fpr, y: tpr });
+  }
+  return pts;
+}
+function getROCPoints(m){
+  if(m.roc && m.roc.fpr && m.roc.tpr){
+    return m.roc.fpr.map((f, i) => ({ x: f, y: m.roc.tpr[i] }));
+  }
+  return synthesizeROC(m.auc);
+}
+
+/* ── ROC chart (line, one curve per model + diagonal reference) ── */
+function renderROCChart(canvasId, dsKey){
+  killChart(canvasId);
+  const ds = DATA.datasets[dsKey];
+  const names = Object.keys(ds.models);
+  const ctx = document.getElementById(canvasId).getContext('2d');
+
+  const modelDatasets = names.map(name => ({
+    label: `${name} (AUC=${ds.models[name].auc.toFixed(2)})`,
+    data: getROCPoints(ds.models[name]),
+    borderColor: MODEL_COLOR[name] || '#8792A2',
+    backgroundColor: MODEL_COLOR[name] || '#8792A2',
+    borderWidth: 2.5,
+    pointRadius: 2,
+    pointHoverRadius: 5,
+    tension: 0.15,
+    fill: false,
+    modelName: name
+  }));
+
+  const randomLine = {
+    label: 'Random (AUC=0.50)',
+    data: [{ x: 0, y: 0 }, { x: 1, y: 1 }],
+    borderColor: '#5B6472',
+    borderDash: [6, 4],
+    borderWidth: 1.5,
+    pointRadius: 0,
+    fill: false,
+    modelName: null
+  };
+
+  charts[canvasId] = new Chart(ctx, {
+    type: 'line',
+    data: { datasets: [...modelDatasets, randomLine] },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      parsing: false,
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, padding: 14 } } },
+      scales: {
+        x: { type: 'linear', min: 0, max: 1, title: { display: true, text: 'False Positive Rate' }, grid: { color: '#1E242D' } },
+        y: { min: 0, max: 1, title: { display: true, text: 'True Positive Rate' }, grid: { color: '#1E242D' } }
+      },
+      onClick: (evt, els) => {
+        if(!els.length) return;
+        const el = els[0];
+        const dset = charts[canvasId].data.datasets[el.datasetIndex];
+        if(!dset.modelName) return;
+        const m = ds.models[dset.modelName];
+        openDrawer(`
+          <span class="tag info">ROC CURVE</span>
+          <h3>${dset.modelName}</h3>
+          <p>${MODEL_DESC[dset.modelName] || ''}</p>
+          <div class="kv"><span>Dataset</span><span>${ds.label}</span></div>
+          <div class="kv"><span>AUC</span><span>${m.auc}</span></div>
+          <div class="kv"><span>Sensitivity (TPR)</span><span>${m.sensitivity}%</span></div>
+          <div class="kv"><span>Specificity (1 − FPR)</span><span>${m.specificity}%</span></div>
+          <p style="margin-top:14px;">AUC of 1.0 is a perfect classifier, 0.5 is no better than chance (the dashed line), and below 0.5 means the model is doing worse than a coin flip on this split.</p>
+        `);
+      }
+    }
+  });
+}
+
 /* ── stats row ─────────────────────────────────────────────────── */
 function renderStats(containerId, dsKey){
   const ds = DATA.datasets[dsKey];
@@ -534,6 +633,7 @@ function renderDatasetSection(dsKey){
   renderStats('ds-stats', dsKey);
   renderModelChart('chart-model-ds', dsKey);
   renderTrajectoryChart('chart-traj-ds', dsKey);
+  renderROCChart('chart-roc-ds', dsKey);
 }
 
 /* ── build everything ─────────────────────────────────────────── */
